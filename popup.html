@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --bg: #fff; --fg: #0b0c0c; --muted: #505a5f; --accent: #c84c0e; --rec: #d4351c; --border: #d6d6d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1e1e1e; --fg: #f3f3f3; --muted: #b1b4b6; --border: #444; } }
+  body { margin: 0; width: 280px; padding: 14px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 10px; }
+  button { width: 100%; padding: 10px; margin-top: 8px; border-radius: 6px; border: 1px solid var(--border);
+           background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.stop { background: var(--rec); border-color: var(--rec); color: #fff; font-weight: 600; }
+  button:focus-visible { outline: 3px solid #ffdd00; outline-offset: 1px; }
+  p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+  #error { color: var(--rec); }
+  fieldset { border: 1px solid var(--border); border-radius: 6px; margin: 0; padding: 6px 10px 8px; }
+  legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+  fieldset label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  input[type=radio]:focus-visible { outline: 3px solid #ffdd00; }
+  #timer { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rec); }
+</style>
+</head>
+<body>
+  <h1>DIGIT Bug Reporter</h1>
+  <div id="idle" hidden>
+    <fieldset>
+      <legend>Capture</legend>
+      <label><input type="radio" name="mode" value="both"> Video + screenshot</label>
+      <label><input type="radio" name="mode" value="video"> Video only</label>
+      <label><input type="radio" name="mode" value="screenshot"> Screenshot only</label>
+    </fieldset>
+    <button id="start" class="primary">● Start recording</button>
+    <p id="hint"></p>
+  </div>
+  <div id="recording" hidden>
+    <p>Recording… <span id="timer">0:00</span></p>
+    <button id="stop" class="stop">■ Stop &amp; review</button>
+    <p>Nothing is sent to GitHub until you review it.</p>
+  </div>
+  <p id="error" role="alert"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

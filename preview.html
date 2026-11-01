@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review bug report</title>
+<link rel="stylesheet" href="preview.css">
+</head>
+<body>
+<main>
+  <h1>Review bug report</h1>
+  <p class="lead">Check everything below. Nothing goes to GitHub until you press <strong>Open on GitHub</strong>,
+    and the issue is only created when you click <strong>Create</strong> there.</p>
+
+  <p id="missing" class="warn" hidden>This report wasn't found. It may have been cleared (only the last 10 are kept).</p>
+
+  <section class="media">
+    <figure id="videoBox" hidden>
+      <video id="video" controls></video>
+      <figcaption>
+        <label><input type="checkbox" id="includeVideo" checked> Attach video</label>
+        <span id="videoSize"></span>
+      </figcaption>
+    </figure>
+    <figure id="shotBox" hidden>
+      <img id="shot" alt="Screenshot of the page when recording stopped">
+      <figcaption>
+        <label><input type="checkbox" id="includeShot" checked> Attach screenshot</label>
+      </figcaption>
+    </figure>
+  </section>
+
+  <form id="form">
+    <div class="row">
+      <label>Repository
+        <select id="repo">
+          <option value="egovernments/DIGIT-Frontend">egovernments/DIGIT-Frontend (UI behaviour)</option>
+          <option value="egovernments/health-campaign-services">egovernments/health-campaign-services (service error / wrong data)</option>
+        </select>
+      </label>
+      <p class="hint" id="repoWhy"></p>
+    </div>
+
+    <label>Title <span class="hint">&lt;Screen/feature&gt;: &lt;what goes wrong&gt; · max 90 characters, no environment name</span>
+      <input id="title" maxlength="90" placeholder="App configuration: dependent field not shown after selecting Yes">
+    </label>
+    <p class="hint">Similar issues: <a id="dupLink" target="_blank" rel="noopener">search open issues</a></p>
+
+    <label>Environment <input id="env"></label>
+    <label>Summary <span class="hint">2–3 sentences: what breaks and who is affected</span>
+      <textarea id="summary" rows="3"></textarea></label>
+    <label>Steps to reproduce <span class="hint">drafted from your clicks; check and add the values you typed</span>
+      <textarea id="steps" rows="8"></textarea></label>
+    <div class="row two">
+      <label>Expected <textarea id="expected" rows="3"></textarea></label>
+      <label>Actual <textarea id="actual" rows="3"></textarea></label>
+    </div>
+    <label>Evidence <span class="hint">failing API calls and console errors, already redacted</span>
+      <textarea id="evidence" rows="8" class="mono"></textarea></label>
+    <p class="hint" id="redactions"></p>
+    <label>Notes <span class="hint">root cause if known, workaround, other envs/campaigns affected</span>
+      <textarea id="notes" rows="2"></textarea></label>
+    <div class="row two">
+      <label>Severity
+        <select id="severity"><option>Critical</option><option>High</option><option selected>Medium</option><option>Low</option></select>
+      </label>
+      <label>Component <input id="component"></label>
+    </div>
+
+    <label class="check"><input type="checkbox" id="pii">
+      I watched the video and checked the screenshot and text: no names, phone numbers, IDs or real household data.
+      Both repositories are public.</label>
+
+    <div class="actions">
+      <button type="submit" id="open" class="primary">Open on GitHub</button>
+      <button type="button" id="copy">Copy as Markdown</button>
+      <button type="button" id="downloadVideo">Download video</button>
+      <button type="button" id="discard" class="danger">Discard</button>
+    </div>
+    <p id="status" role="status"></p>
+  </form>
+</main>
+<script type="module" src="preview.js"></script>
+</body>
+</html>
