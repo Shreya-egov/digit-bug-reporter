@@ -23,12 +23,27 @@ uploads the media. You click **Create**.
    With **Screenshot only**, click **📷 Take screenshot** instead; the review page opens straight away.
 3. Click the icon again, then **■ Stop & review**.
 4. On the review page:
+   - Pick the **repository** (type to search), then optionally the **assignees** for that repo.
+     Your assignee choice is remembered per repo.
    - Write the title, the expected result and the actual result.
    - Check the drafted steps, and add the values you typed. Typed text is never recorded.
    - Watch the video. Tick the box confirming that no personal data is visible.
 5. Click **Open on GitHub**. Wait for the "done" banner, check the issue, then click **Create**.
 
 Other options: **Copy as Markdown** for Jira or Slack, **Download video**, and **Discard**.
+
+## Connecting GitHub (optional)
+Without a token the review page lists the public `egovernments` repos and the people who can be assigned in the
+chosen repo. GitHub allows about 60 such lookups an hour without a token; lists are cached, so reopening a report
+doesn't repeat them.
+
+A token adds the private repos your account can open and a much higher limit. Open the extension's **Settings**
+(right-click the icon → *Options*, or the **Connect GitHub** link on the review page), paste a token and click
+**Save and test**. The settings page explains which read-only permissions it needs. The token stays in your Chrome
+profile and is only used to read these lists.
+
+Assignees are passed to GitHub in the new-issue link. GitHub applies them only if you have triage or write access to
+the repo; otherwise set them in the issue sidebar.
 
 ## What is captured
 - **Captured:** failing API calls (method, path, status, and the DIGIT `Errors[].code/message`); console errors;

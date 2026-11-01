@@ -31,14 +31,29 @@
   </section>
 
   <form id="form">
-    <div class="row">
-      <label>Repository
-        <select id="repo">
-          <option value="egovernments/DIGIT-Frontend">egovernments/DIGIT-Frontend (UI behaviour)</option>
-          <option value="egovernments/health-campaign-services">egovernments/health-campaign-services (service error / wrong data)</option>
-        </select>
-      </label>
+    <div class="row combo-row">
+      <label for="repo">Repository <span class="hint">click to see all · type to search · or type owner/name</span></label>
+      <div class="combo" id="repoCombo">
+        <input id="repo" role="combobox" aria-expanded="false" aria-controls="repoOptions" aria-autocomplete="list"
+               autocomplete="off" spellcheck="false">
+        <button type="button" id="repoToggle" class="combo-toggle" aria-label="Show repositories" tabindex="-1">▾</button>
+        <ul id="repoOptions" role="listbox" aria-label="Repositories" hidden></ul>
+      </div>
       <p class="hint" id="repoWhy"></p>
+      <p class="hint" id="githubConn"></p>
+    </div>
+
+    <div class="row combo-row assignees">
+      <label for="assigneeInput">Assignees <span id="assigneeCount" class="hint"></span></label>
+      <div class="combo" id="assigneeCombo">
+        <input id="assigneeInput" role="combobox" aria-expanded="false" aria-controls="assigneeOptions" aria-autocomplete="list"
+               autocomplete="off" spellcheck="false" placeholder="Search people…">
+        <button type="button" id="assigneeToggle" class="combo-toggle" aria-label="Show people" tabindex="-1">▾</button>
+        <ul id="assigneeOptions" role="listbox" aria-label="People who can be assigned" hidden></ul>
+      </div>
+      <ul id="assigneeChips" class="chips" aria-label="Selected assignees"></ul>
+      <input id="assigneeText" placeholder="GitHub usernames, comma-separated" aria-label="Assignees" hidden>
+      <p class="hint" id="assigneeHint"></p>
     </div>
 
     <label>Title <span class="hint">&lt;Screen/feature&gt;: &lt;what goes wrong&gt; · max 90 characters, no environment name</span>

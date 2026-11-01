@@ -13,6 +13,10 @@
       "suggested_key": { "default": "Alt+Shift+B" }
     }
   },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

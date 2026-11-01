@@ -138,11 +138,14 @@
         say(`uploading ${f.name}…`);
         if (!(await upload(body, toFile(f)))) failed.push(f);
       }
+      // GitHub silently drops assignees from the URL if you lack triage/write access, so ask to check.
+      const check = payload.assignees.length
+        ? ` Check that ${payload.assignees.join(', ')} show under Assignees in the sidebar; set them there if not.` : '';
       if (failed.length) {
-        say(`${failed.map((f) => f.name).join(', ')} didn't upload. Drag the file into the description, then click Create.`, 'warn');
+        say(`${failed.map((f) => f.name).join(', ')} didn't upload. Drag the file into the description, then click Create.${check}`, 'warn');
         offerDownload(failed);
       } else {
-        say('done. Review the issue, then click Create yourself.', 'ok');
+        say(`done.${check} Review the issue, then click Create yourself.`, 'ok');
       }
     } finally {
       busy = false;

@@ -1,5 +1,7 @@
 import * as db from './db.js';
 import { redact } from './redact.js';
+import { getToken, listAssignees, listRepos } from './github-api.js';
+import { createCombo } from './combo.js';
 
 const $ = (id) => document.getElementById(id);
 const id = new URLSearchParams(location.search).get('id');
@@ -14,6 +16,7 @@ const ENVIRONMENTS = {
 const UI_REPO = 'egovernments/DIGIT-Frontend';
 const SERVICE_REPO = 'egovernments/health-campaign-services';
 const MAX_STEPS = 25;
+const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 const counts = {};
 const clean = (s) => redact(s, counts).text;
@@ -112,11 +115,206 @@ function updateDupLink() {
   $('dupLink').href = `https://github.com/${$('repo').value}/issues?q=${encodeURIComponent(`is:issue ${words}`)}`;
 }
 
-// Say what is still missing instead of silently disabling the button.
-function missingBeforeOpen() {
-  if (!$('title').value.trim()) return ['title', 'Add a title first.'];
-  if (!$('pii').checked) return ['pii', 'Tick the box confirming the video, screenshot and text have no personal data.'];
-  return null;
+// ---- GitHub fields: repo dropdown, then the chosen repo's assignees ----
+let token = '';
+let fieldsLoad = 0;
+let repos = [UI_REPO, SERVICE_REPO]; // the main two are usable straight away; the full list takes a few pages
+let currentRepo = '';
+
+async function loadRepos() {
+  try {
+    const listed = await listRepos(token);
+    repos = [...new Set([UI_REPO, SERVICE_REPO, ...listed])];
+  } catch (err) {
+    $('githubConn').textContent = `Repo list unavailable (${err.message}). You can still type owner/name.`;
+  }
+  repoCombo.refresh();
+}
+
+const savedChoice = async (repo) => ((await chrome.storage.local.get('lastChoice')).lastChoice || {})[repo] || {};
+
+async function rememberChoice(repo, choice) {
+  const { lastChoice = {} } = await chrome.storage.local.get('lastChoice');
+  await chrome.storage.local.set({ lastChoice: { ...lastChoice, [repo]: choice } });
+}
+
+// Setting the field fires 'change', which reloads assignees and re-checks the field.
+function setRepo(value) {
+  $('repo').value = value;
+  $('repo').dispatchEvent(new Event('change'));
+  updateDupLink();
+}
+
+const repoCombo = createCombo({
+  input: $('repo'),
+  listbox: $('repoOptions'),
+  toggle: $('repoToggle'),
+  container: $('repoCombo'),
+  items: () => repos,
+  pinned: 2,
+  isCurrent: (value) => value === currentRepo,
+  onPick: setRepo,
+  onEnter: setRepo,
+  emptyText: (q) => (q ? `No listed repo matches "${q}". Press Enter to use it as typed (owner/name).` : 'Loading repos…'),
+});
+
+// ---- Assignees: the dropdown closes after each pick; picked people show as removable chips ----
+const MAX_ASSIGNEES = 10; // GitHub's limit per issue
+let people = [];
+let picked = [];
+
+const assigneeCombo = createCombo({
+  input: $('assigneeInput'),
+  listbox: $('assigneeOptions'),
+  toggle: $('assigneeToggle'),
+  container: $('assigneeCombo'),
+  items: () => people.filter((login) => !picked.includes(login)),
+  onPick: pick,
+  emptyText: (q) => (q ? `Nobody matches "${q}".` : people.length ? 'Everyone is already picked.' : 'Nobody can be assigned in this repo.'),
+});
+
+function pick(login) {
+  if (picked.length >= MAX_ASSIGNEES) {
+    $('assigneeHint').textContent = `GitHub allows at most ${MAX_ASSIGNEES} assignees.`;
+  } else if (!picked.includes(login)) {
+    picked.push(login);
+  }
+  $('assigneeInput').value = '';
+  renderChips();
+}
+
+function unpick(login) {
+  picked = picked.filter((l) => l !== login);
+  $('assigneeHint').textContent = '';
+  renderChips();
+  assigneeCombo.refresh(); // they're pickable again
+}
+
+function renderChips() {
+  $('assigneeChips').replaceChildren(...picked.map((login) => {
+    const li = document.createElement('li');
+    const remove = Object.assign(document.createElement('button'), { type: 'button', textContent: '×' });
+    remove.setAttribute('aria-label', `Remove ${login}`);
+    remove.addEventListener('click', () => { unpick(login); $('assigneeInput').focus(); });
+    li.append(login, remove);
+    return li;
+  }));
+  // the list closes after each pick, so say that more people can be added
+  $('assigneeInput').placeholder = picked.length >= MAX_ASSIGNEES ? `Limit of ${MAX_ASSIGNEES} reached`
+    : picked.length ? 'Add another person…' : 'Search people…';
+  updateAssigneeCount();
+}
+
+function useAssigneeText(hint, value = []) {
+  assigneeCombo.close();
+  $('assigneeCombo').hidden = true;
+  $('assigneeChips').hidden = true;
+  $('assigneeText').hidden = false;
+  $('assigneeText').value = value.join(', ');
+  $('assigneeHint').textContent = hint;
+  $('assigneeCount').textContent = '';
+}
+
+function renderAssignees(logins, selected) {
+  people = logins;
+  picked = selected.filter((l) => logins.includes(l));
+  $('assigneeInput').value = '';
+  assigneeCombo.close();
+  $('assigneeCombo').hidden = false;
+  $('assigneeChips').hidden = false;
+  $('assigneeText').hidden = true;
+  $('assigneeHint').textContent = logins.length ? '' : 'Nobody can be assigned in this repo.';
+  renderChips();
+}
+
+function updateAssigneeCount() {
+  const n = assigneeValues().length;
+  $('assigneeCount').textContent = n ? `· ${n} selected` : '';
+}
+
+const assigneeValues = () => ($('assigneeText').hidden
+  ? [...picked]
+  : $('assigneeText').value.split(/[\s,]+/).map((s) => s.replace(/^@/, '')).filter(Boolean));
+
+async function loadRepoFields() {
+  const repo = $('repo').value.trim();
+  if (!REPO_RE.test(repo)) return;
+  currentRepo = repo;
+  const load = ++fieldsLoad; // a slower lookup for a previous repo must not overwrite this one
+  const saved = await savedChoice(repo);
+  $('assigneeHint').textContent = 'Loading people…';
+  try {
+    const logins = await listAssignees(repo, token);
+    if (load === fieldsLoad) renderAssignees(logins, saved.assignees || []);
+  } catch (err) {
+    if (load === fieldsLoad) useAssigneeText(`Couldn't list people (${err.message}). Type GitHub usernames instead.`, saved.assignees);
+  }
+}
+
+async function initGithubFields() {
+  token = await getToken();
+  const conn = $('githubConn');
+  conn.replaceChildren(token ? 'Connected to GitHub. ' : 'Not connected to GitHub: only public egovernments repos are listed. ');
+  const link = Object.assign(document.createElement('a'), { href: '#', textContent: token ? 'Settings' : 'Connect GitHub' });
+  link.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+  conn.append(link);
+
+  $('repo').addEventListener('change', loadRepoFields);
+  // Backspace in the empty field removes the last picked person
+  $('assigneeInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' && !$('assigneeInput').value && picked.length) unpick(picked[picked.length - 1]);
+  });
+  await Promise.all([loadRepos(), loadRepoFields()]);
+}
+
+// ---- Field validation: each message sits under its own field and clears once that field is fixed ----
+const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
+const CHECKS = [
+  ['repo', () => REPO_RE.test($('repo').value.trim()) || 'Pick a repository in the form owner/name, e.g. egovernments/DIGIT-Frontend.'],
+  ['assigneeText', () => {
+    if ($('assigneeText').hidden) return true;
+    const bad = assigneeValues().filter((l) => !LOGIN_RE.test(l));
+    return !bad.length || `Not a GitHub username: ${bad.join(', ')}.`;
+  }],
+  ['title', () => !!$('title').value.trim() || 'Add a title.'],
+  ['pii', () => $('pii').checked || 'Tick this box after checking the video, screenshot and text for personal data.'],
+];
+
+function setFieldError(id, message) {
+  const field = $(id);
+  const errorId = `${id}Error`;
+  let el = $(errorId);
+  if (!message) {
+    el?.remove();
+    field.removeAttribute('aria-invalid');
+    return;
+  }
+  if (!el) {
+    el = Object.assign(document.createElement('p'), { id: errorId, className: 'field-error' });
+    (field.closest('label, .combo') || field).after(el);
+  }
+  el.textContent = message;
+  field.setAttribute('aria-invalid', 'true');
+  field.setAttribute('aria-describedby', errorId);
+}
+
+// Shows every problem at once and returns the first field that needs fixing.
+function validate() {
+  let first = null;
+  for (const [id, check] of CHECKS) {
+    const result = check();
+    setFieldError(id, result === true ? '' : result);
+    if (result !== true) first ??= id;
+  }
+  return first;
+}
+
+// Re-check a field as soon as it changes, so its message goes away when fixed.
+for (const [id, check] of CHECKS) {
+  for (const type of ['input', 'change']) {
+    $(id).addEventListener(type, () => { if ($(`${id}Error`)) { const r = check(); setFieldError(id, r === true ? '' : r); } });
+  }
 }
 
 function status(text, isError = false) {
@@ -171,27 +369,36 @@ if (!report) {
 
   updateDupLink();
   for (const el of ['title', 'repo']) $(el).addEventListener('input', updateDupLink);
+  initGithubFields();
 
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const missing = missingBeforeOpen();
-    if (missing) {
-      status(missing[1], true);
-      $(missing[0]).focus();
-      $(missing[0]).scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const invalid = validate();
+    if (invalid) {
+      status('');
+      $(invalid).focus();
+      $(invalid).scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
     try {
+      const repo = $('repo').value.trim();
+      const assignees = assigneeValues();
       await db.update(id, {
         title: $('title').value.trim(),
         body: buildBody(),
-        repo: $('repo').value,
+        repo,
+        assignees,
         includeVideo: $('includeVideo').checked,
         includeScreenshot: $('includeShot').checked,
       });
       report = await db.get(id);
+      await rememberChoice(repo, { assignees });
+      // GitHub's new-issue URL pre-selects assignees (applied only if you have triage/write access)
+      const params = new URLSearchParams();
+      if (assignees.length) params.set('assignees', assignees.join(','));
+      const query = params.toString();
       // tabs.create, not window.open: a popup blocker can swallow window.open after the await above
-      await chrome.tabs.create({ url: `https://github.com/${$('repo').value}/issues/new#digitbug=${id}` });
+      await chrome.tabs.create({ url: `https://github.com/${repo}/issues/new${query ? `?${query}` : ''}#digitbug=${id}` });
       status('GitHub opened in a new tab. Check the filled form there, wait for the uploads to finish, then click Create.');
     } catch (err) {
       showFailure(err);

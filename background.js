@@ -112,7 +112,7 @@ async function githubPayload(id) {
   if (r.video?.size && r.includeVideo !== false) {
     files.push({ name: 'recording.webm', type: 'video/webm', base64: await blobToBase64(r.video) });
   }
-  return { title: r.title, body: r.body, files };
+  return { title: r.title, body: r.body, files, assignees: r.assignees || [] };
 }
 
 async function blobToBase64(blob) {
