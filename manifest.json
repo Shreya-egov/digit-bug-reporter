@@ -21,7 +21,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["tabCapture", "offscreen", "storage", "activeTab"],
+  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "scripting"],
   "host_permissions": ["https://*.digit.org/*", "https://github.com/*"],
   "content_scripts": [
     {

@@ -29,6 +29,9 @@
       }
       if (j.message || j.error) return short(j.message || j.error);
     } catch { /* not JSON */ }
+    // gateway error pages (504 Gateway Time-out, 502 Bad Gateway) are HTML; their title says it all
+    const title = /<title>([^<]*)<\/title>|<h1>([^<]*)<\/h1>/i.exec(text);
+    if (title) return short(title[1] || title[2]);
     return short(text, 200);
   };
 

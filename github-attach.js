@@ -154,7 +154,9 @@
 
   // GitHub navigates without full page loads (e.g. from the template chooser), so keep watching the URL.
   let lastHref = '';
-  setInterval(() => {
-    if (location.href !== lastHref) { lastHref = location.href; run(); }
+  const watch = setInterval(() => {
+    // after the extension is reloaded this copy is cut off; stop instead of throwing "Extension context invalidated"
+    if (!chrome.runtime?.id) { clearInterval(watch); return; }
+    if (location.href !== lastHref) { lastHref = location.href; run().catch(() => {}); }
   }, 1000);
 })();

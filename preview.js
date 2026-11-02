@@ -363,6 +363,12 @@ if (!report) {
 
   const masked = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ');
   $('redactions').textContent = masked ? `Redacted automatically: ${masked}.` : 'Nothing needed redacting.';
+  if (report.captureRestartedAt) {
+    $('captureNote').hidden = false;
+    $('captureNote').textContent = `API and console capture wasn't running in this tab (it was open when the extension was `
+      + `installed or updated) and was restarted at ${new Date(report.captureRestartedAt).toLocaleTimeString()}. `
+      + 'Calls before that are missing: reproduce the bug again if they matter.';
+  }
 
   updateDupLink();
   for (const el of ['title', 'repo']) $(el).addEventListener('input', updateDupLink);

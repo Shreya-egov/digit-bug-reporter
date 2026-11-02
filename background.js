@@ -49,6 +49,25 @@ async function screenshotOf(tabId) {
   }
 }
 
+// A DIGIT tab that was open when the extension was installed, reloaded or updated has no working capture: the
+// old relay.js copy is cut off from the extension. Put fresh scripts in; page-hook.js skips itself if the page
+// already has one. Returns true when capture had to be (re)started, so events before now are missing.
+async function ensureCapture(tabId) {
+  const alive = await chrome.tabs.sendMessage(tabId, { type: 'relay-ping' }).catch(() => false);
+  if (alive) return false;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['page-hook.js'], world: 'MAIN' });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['relay.js'] });
+    return true;
+  } catch {
+    return false; // not a DIGIT tab, or a page scripts can't run in
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  for (const tab of await chrome.tabs.query({ url: 'https://*.digit.org/*' })) ensureCapture(tab.id);
+});
+
 async function newReport(tab) {
   const report = { id: crypto.randomUUID(), createdAt: Date.now(), tabId: tab.id, tabUrl: tab.url || '', tabTitle: tab.title || '' };
   await db.put(report);
@@ -68,6 +87,7 @@ async function start(tabId, streamId, withScreenshot = true) {
   if (await getRec()) throw new Error('Already recording');
   const tab = await chrome.tabs.get(tabId);
   const report = await newReport(tab);
+  if (await ensureCapture(tabId)) await db.update(report.id, { captureRestartedAt: Date.now() });
   await ensureOffscreen();
   const res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'start', streamId });
   if (!res?.ok) {
@@ -100,6 +120,7 @@ function stop() {
 async function snapshot(tabId) {
   const tab = await chrome.tabs.get(tabId);
   const report = await newReport(tab);
+  if (await ensureCapture(tabId)) await db.update(report.id, { captureRestartedAt: Date.now() });
   await finishReport(report.id, tabId, Date.now() - 2 * LOOKBACK_MS);
 }
 
