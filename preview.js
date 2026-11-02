@@ -131,12 +131,10 @@ async function loadRepos() {
   repoCombo.refresh();
 }
 
-const savedChoice = async (repo) => ((await chrome.storage.local.get('lastChoice')).lastChoice || {})[repo] || {};
-
-async function rememberChoice(repo, choice) {
-  const { lastChoice = {} } = await chrome.storage.local.get('lastChoice');
-  await chrome.storage.local.set({ lastChoice: { ...lastChoice, [repo]: choice } });
-}
+// Assignees are not carried over between reports: pre-filled people from an old report were surprising.
+// Only reopening the same report brings back its own picks. Clears what older versions remembered.
+chrome.storage.local.remove('lastChoice');
+const ownPicks = (repo) => (report?.repo === repo ? report.assignees || [] : []);
 
 // Setting the field fires 'change', which reloads assignees and re-checks the field.
 function setRepo(value) {
@@ -241,13 +239,12 @@ async function loadRepoFields() {
   if (!REPO_RE.test(repo)) return;
   currentRepo = repo;
   const load = ++fieldsLoad; // a slower lookup for a previous repo must not overwrite this one
-  const saved = await savedChoice(repo);
   $('assigneeHint').textContent = 'Loading people…';
   try {
     const logins = await listAssignees(repo, token);
-    if (load === fieldsLoad) renderAssignees(logins, saved.assignees || []);
+    if (load === fieldsLoad) renderAssignees(logins, ownPicks(repo));
   } catch (err) {
-    if (load === fieldsLoad) useAssigneeText(`Couldn't list people (${err.message}). Type GitHub usernames instead.`, saved.assignees);
+    if (load === fieldsLoad) useAssigneeText(`Couldn't list people (${err.message}). Type GitHub usernames instead.`, ownPicks(repo));
   }
 }
 
@@ -392,7 +389,6 @@ if (!report) {
         includeScreenshot: $('includeShot').checked,
       });
       report = await db.get(id);
-      await rememberChoice(repo, { assignees });
       // GitHub's new-issue URL pre-selects assignees (applied only if you have triage/write access)
       const params = new URLSearchParams();
       if (assignees.length) params.set('assignees', assignees.join(','));

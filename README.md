@@ -23,8 +23,8 @@ uploads the media. You click **Create**.
    With **Screenshot only**, click **📷 Take screenshot** instead; the review page opens straight away.
 3. Click the icon again, then **■ Stop & review**.
 4. On the review page:
-   - Pick the **repository** (type to search), then optionally the **assignees** for that repo.
-     Your assignee choice is remembered per repo.
+   - Pick the **repository** (click to see all, or type to search), then optionally the **assignees** for that
+     repo. Each new report starts with nobody assigned.
    - Write the title, the expected result and the actual result.
    - Check the drafted steps, and add the values you typed. Typed text is never recorded.
    - Watch the video. Tick the box confirming that no personal data is visible.
