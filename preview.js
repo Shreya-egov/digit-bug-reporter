@@ -34,7 +34,6 @@ function environmentLine(url, events) {
     tenant && `tenant ${tenant}`,
     campaign && `campaign ${campaign}${flow ? ` / flow ${flow}` : ''}`,
     chrome && `Chrome ${chrome}`,
-    'UI build: not captured',
   ].filter(Boolean).join(', ');
 }
 
@@ -68,12 +67,40 @@ function dedupe(lines) {
   return [...seen].map(([l, n]) => (n > 1 ? `${l}  (×${n})` : l));
 }
 
+const MAX_CALLS = 10;
+const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+// The failing request as a curl command (secrets were stripped when it was recorded, the rest is redacted).
+function curlOf(e) {
+  const lines = [`curl -X ${e.method} ${shellQuote(e.fullUrl)}`];
+  for (const [name, value] of Object.entries(e.reqHeaders || {})) lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`);
+  if (e.reqBody) lines.push(`  --data-raw ${shellQuote(e.reqBody)}`);
+  return lines.join(' \\\n');
+}
+
+const prettyJson = (text) => {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; } // cut-off or not JSON
+};
+
 function evidenceText(events) {
-  const calls = dedupe(events.filter((e) => e.kind === 'network')
-    .map((e) => `${e.method} ${e.url} → ${e.status || 'failed'}${e.error ? `  ${e.error}` : ''}`));
+  // one entry per call; repeats of the same call and status are counted, not listed again
+  const calls = new Map();
+  for (const e of events.filter((x) => x.kind === 'network')) {
+    const key = `${e.method} ${e.url.split('?')[0]} ${e.status}`;
+    const seen = calls.get(key);
+    if (seen) seen.count++;
+    else calls.set(key, { e, count: 1 });
+  }
+  const blocks = [...calls.values()].slice(0, MAX_CALLS).map(({ e, count }, i) => [
+    `${i + 1}. ${e.method} ${e.url} → ${e.status || 'failed'}${e.error ? `  ${e.error}` : ''}${count > 1 ? `  (×${count})` : ''}`,
+    e.fullUrl && curlOf(e),
+    e.response && `Response ${e.status}:\n${prettyJson(e.response)}`,
+  ].filter(Boolean).join('\n'));
+  if (calls.size > MAX_CALLS) blocks.push(`… ${calls.size - MAX_CALLS} more failing calls not listed`);
+
   const errors = dedupe(events.filter((e) => e.kind === 'console').map((e) => e.text));
   const parts = [];
-  if (calls.length) parts.push('Failing API calls:\n' + calls.join('\n'));
+  if (blocks.length) parts.push('Failing API calls:\n\n' + blocks.join('\n\n'));
   if (errors.length) parts.push('Console errors:\n' + errors.slice(0, 20).join('\n'));
   return parts.join('\n\n') || 'No failing API calls or console errors were captured.';
 }
@@ -332,8 +359,12 @@ if (!report) {
   const events = (report.events || []).map((e) => ({
     ...e,
     url: e.url && clean(e.url),
+    fullUrl: e.fullUrl && clean(e.fullUrl),
     text: e.text && clean(e.text),
     error: e.error && clean(e.error),
+    reqBody: e.reqBody && clean(e.reqBody),
+    response: e.response && clean(e.response),
+    reqHeaders: e.reqHeaders && Object.fromEntries(Object.entries(e.reqHeaders).map(([k, v]) => [k, clean(v)])),
   }));
   const tabUrl = clean(report.tabUrl);
 
@@ -397,6 +428,8 @@ if (!report) {
       report = await db.get(id);
       // GitHub's new-issue URL pre-selects assignees (applied only if you have triage/write access)
       const params = new URLSearchParams();
+      // GitHub's own pre-fill for the title; the GitHub page script checks it arrived
+      params.set('title', $('title').value.trim());
       if (assignees.length) params.set('assignees', assignees.join(','));
       const query = params.toString();
       // tabs.create, not window.open: a popup blocker can swallow window.open after the await above

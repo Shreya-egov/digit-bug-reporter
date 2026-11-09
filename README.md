@@ -46,10 +46,12 @@ Assignees are passed to GitHub in the new-issue link. GitHub applies them only i
 the repo; otherwise set them in the issue sidebar.
 
 ## What is captured
-- **Captured:** failing API calls (method, path, status, and the DIGIT `Errors[].code/message`); console errors;
-  button and option clicks; select and checkbox changes; page changes; the tenant.
-  Events start 1 minute before you press Start, so errors from page load are included.
-- **Never captured:** request bodies (they contain the auth token), what you type into text fields, and audio.
+- **Captured:** failing API calls, each with a ready-to-run `curl` command (method, URL, headers, request body)
+  and the server's response; console errors; button and option clicks; select and checkbox changes; page changes;
+  the tenant. Events start 1 minute before you press Start, so errors from page load are included.
+- **Removed as soon as a request is recorded:** passwords, auth tokens (`RequestInfo.authToken`, `auth-token`,
+  `Authorization`), `RequestInfo.userInfo` and cookies. They never reach the extension's storage.
+- **Never captured:** what you type into text fields, file uploads, and audio.
 - **Redaction:** tokens, JWTs, passwords, OTPs, phone numbers, emails, personal-data fields and non-essential query
   parameters are masked automatically. Free text and the video can't be redacted, so check them before filing.
 - **Storage:** only the last 10 reports are kept, in the extension's own storage.

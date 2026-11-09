@@ -117,9 +117,9 @@
     busy = true;
     try {
       say('filling in the issue…');
-      const [title, body] = [await waitFor(titleInput), await waitFor(bodyInput)];
-      if (!title || !body) {
-        say('couldn\'t find the title/description fields on this page. Use "Copy as Markdown" on the review page instead.', 'warn');
+      const body = await waitFor(bodyInput);
+      if (!body) {
+        say('couldn\'t find the description field on this page. Use "Copy as Markdown" on the review page instead.', 'warn');
         return;
       }
       const res = await chrome.runtime.sendMessage({ type: 'github-payload', id });
@@ -130,7 +130,14 @@
       }
       sessionStorage.removeItem(KEY); // fill once; a reload won't overwrite edits
 
-      setText(title, payload.title);
+      // The title also comes in the link (?title=), GitHub's own pre-fill. Only type it if it isn't there, then
+      // read it back: a field GitHub's form didn't register would look filled but be submitted empty.
+      const title = titleInput();
+      for (let i = 0; i < 2 && title && title.value !== payload.title; i++) {
+        setText(title, payload.title);
+        await sleep(300); // a form that rejected the value puts the old one back on its next render
+      }
+      const titleOk = !title || title.value === payload.title;
       setText(body, payload.body);
 
       const failed = [];
@@ -139,8 +146,14 @@
         if (!(await upload(body, toFile(f)))) failed.push(f);
       }
       // GitHub silently drops assignees from the URL if you lack triage/write access, so ask to check.
-      const check = payload.assignees.length
+      let check = payload.assignees.length
         ? ` Check that ${payload.assignees.join(', ')} show under Assignees in the sidebar; set them there if not.` : '';
+      if (!titleOk) check = ` The title didn't fill in; paste it: "${payload.title}".${check}`;
+      else if (!title) check = ` Check the title reads "${payload.title}".${check}`;
+      if (!titleOk && !failed.length) {
+        say(`almost done.${check} Then click Create yourself.`, 'warn');
+        return;
+      }
       if (failed.length) {
         say(`${failed.map((f) => f.name).join(', ')} didn't upload. Drag the file into the description, then click Create.${check}`, 'warn');
         offerDownload(failed);

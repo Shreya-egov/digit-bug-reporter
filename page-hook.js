@@ -1,6 +1,7 @@
-// Runs in the DIGIT page's own JS world from document_start. Records failing API calls, console errors
-// and the user's clicks/navigation, and hands them to relay.js. Never records request bodies (they carry
-// the auth token) or what is typed into text fields.
+// Runs in the DIGIT page's own JS world from document_start. Records failing API calls (with the request,
+// so the review page can show a curl command, and the response), console errors and the user's clicks and
+// navigation, and hands them to relay.js. Secrets are stripped here, before anything leaves the page; what is
+// typed into text fields is never recorded.
 (() => {
   if (window.__digitBugHook) return;
   window.__digitBugHook = true;
@@ -18,6 +19,55 @@
       return (u.origin === location.origin ? '' : u.host) + u.pathname + u.search;
     } catch { return short(url, 200); }
   };
+
+  const fullUrl = (url) => {
+    try { return new URL(url, location.href).href; } catch { return String(url); }
+  };
+
+  // ---- secrets: the auth token rides in DIGIT request bodies (RequestInfo), the login form carries the
+  // password. Strip them now; names, phone numbers etc. are masked later, on the review page.
+  const MAX_BODY = 5000;
+  const MAX_RESPONSE = 2000;
+  const SECRET_KEY = /^(auth-?token|access_?token|refresh_?token|id_?token|password|pwd|otp|pin|client_?secret|userInfo)$/i;
+
+  const scrubValue = (v) => {
+    if (Array.isArray(v)) return v.map(scrubValue);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, SECRET_KEY.test(k) ? '<redacted>' : scrubValue(x)]));
+    }
+    return v;
+  };
+
+  const scrubText = (text, max) => {
+    try { return JSON.stringify(scrubValue(JSON.parse(text))).slice(0, max); } catch { /* not JSON */ }
+    if (/^[\w.%-]+=[^&]*(&[\w.%-]+=[^&]*)*$/.test(text.trim())) {
+      const form = new URLSearchParams(text);
+      for (const k of [...form.keys()]) if (SECRET_KEY.test(k)) form.set(k, '<redacted>');
+      return form.toString().replace(/%3Credacted%3E/g, '<redacted>').slice(0, max);
+    }
+    return text.slice(0, max);
+  };
+
+  const scrubBody = (body) => {
+    if (body == null) return '';
+    if (typeof body === 'string') return scrubText(body, MAX_BODY);
+    if (body instanceof URLSearchParams) return scrubText(body.toString(), MAX_BODY);
+    if (body instanceof FormData) return '<multipart form data, not recorded>';
+    return '<binary body, not recorded>';
+  };
+
+  const headersOf = (h) => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return { ...h };
+  };
+
+  // Cookies are dropped; credentials keep only their scheme ("Basic <redacted>").
+  const scrubHeaders = (h) => Object.fromEntries(Object.entries(h)
+    .filter(([k]) => !/^cookie$/i.test(k))
+    .map(([k, v]) => [k, /^(authorization|proxy-authorization|auth-?token|x-[\w-]*token)$/i.test(k)
+      ? String(v).replace(/^(\w+)\s+.*$/, '$1 <redacted>').replace(/^[^ ]*$/, '<redacted>') : String(v)]));
 
   // DIGIT services answer with { Errors: [{ code, message }] }; keep just that.
   const errorSummary = (text) => {
@@ -58,17 +108,28 @@
   const origFetch = window.fetch;
   window.fetch = async function (input, init) {
     const method = String(init?.method || input?.method || 'GET').toUpperCase();
-    const url = pathOf(typeof input === 'string' ? input : input?.url ?? String(input));
+    const raw = typeof input === 'string' ? input : input?.url ?? String(input);
+    const request = {
+      method,
+      url: pathOf(raw),
+      fullUrl: fullUrl(raw),
+      reqHeaders: scrubHeaders({ ...headersOf(input?.headers), ...headersOf(init?.headers) }),
+    };
+    // a Request object's body can only be read asynchronously, and before fetch consumes it
+    const reqBody = init?.body === undefined && input instanceof Request && !['GET', 'HEAD'].includes(method)
+      ? input.clone().text().then(scrubBody).catch(() => '')
+      : Promise.resolve(scrubBody(init?.body));
     try {
       const res = await origFetch.apply(this, arguments);
       if (res.status >= 400) {
-        res.clone().text()
-          .then((t) => post({ kind: 'network', method, url, status: res.status, error: errorSummary(t) }))
-          .catch(() => post({ kind: 'network', method, url, status: res.status }));
+        Promise.all([reqBody, res.clone().text().catch(() => '')]).then(([body, text]) => post({
+          kind: 'network', ...request, reqBody: body, status: res.status,
+          error: errorSummary(text), response: scrubText(text, MAX_RESPONSE),
+        }));
       }
       return res;
     } catch (err) {
-      post({ kind: 'network', method, url, status: 0, error: short(err?.message) });
+      reqBody.then((body) => post({ kind: 'network', ...request, reqBody: body, status: 0, error: short(err?.message) }));
       throw err;
     }
   };
@@ -76,13 +137,21 @@
   // XMLHttpRequest (axios, which the DIGIT UI uses)
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
+  const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__digitBug = { method: String(method).toUpperCase(), url: pathOf(url) };
+    this.__digitBug = { method: String(method).toUpperCase(), url: pathOf(url), fullUrl: fullUrl(url), headers: {} };
     return origOpen.apply(this, arguments);
   };
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+    if (this.__digitBug) this.__digitBug.headers[name] = value;
+    return origSetHeader.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function (body) {
     const info = this.__digitBug;
     if (info) {
+      const reqBody = scrubBody(body);
+      let timedOut = false;
+      this.addEventListener('timeout', () => { timedOut = true; });
       this.addEventListener('loadend', () => {
         if (this.status && this.status < 400) return;
         let text = '';
@@ -91,8 +160,11 @@
           else if (this.responseType === 'json') text = JSON.stringify(this.response);
         } catch { /* unreadable body */ }
         post({
-          kind: 'network', ...info, status: this.status,
-          error: this.status ? errorSummary(text) : 'request failed (network error, CORS or aborted)',
+          kind: 'network', method: info.method, url: info.url, fullUrl: info.fullUrl,
+          reqHeaders: scrubHeaders(info.headers), reqBody, status: this.status,
+          error: this.status ? errorSummary(text)
+            : timedOut ? `timed out after ${this.timeout / 1000} s` : 'request failed (network error, CORS or aborted)',
+          response: this.status ? scrubText(text, MAX_RESPONSE) : '',
         });
       });
     }
