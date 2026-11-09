@@ -3,12 +3,15 @@
 // navigation, and hands them to relay.js. Secrets are stripped here, before anything leaves the page; what is
 // typed into text fields is never recorded.
 (() => {
-  if (window.__digitBugHook) return;
-  window.__digitBugHook = true;
+  // Bump with HOOK_VERSION in relay.js whenever what this records changes. A tab that was open when the
+  // extension updated still runs the old copy; the new one installs on top and relay.js ignores the old one's events.
+  const VERSION = 2;
+  if (window.__digitBugHook >= VERSION) return;
+  window.__digitBugHook = VERSION;
 
   const post = (event) => {
     try {
-      window.postMessage({ __digitBug: 1, event: { ts: Date.now(), ...event } }, location.origin);
+      window.postMessage({ __digitBug: VERSION, event: { ts: Date.now(), ...event } }, location.origin);
     } catch { /* page navigating away */ }
   };
   const short = (s, n = 300) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -107,18 +110,23 @@
   // fetch
   const origFetch = window.fetch;
   window.fetch = async function (input, init) {
-    const method = String(init?.method || input?.method || 'GET').toUpperCase();
-    const raw = typeof input === 'string' ? input : input?.url ?? String(input);
-    const request = {
-      method,
-      url: pathOf(raw),
-      fullUrl: fullUrl(raw),
-      reqHeaders: scrubHeaders({ ...headersOf(input?.headers), ...headersOf(init?.headers) }),
-    };
-    // a Request object's body can only be read asynchronously, and before fetch consumes it
-    const reqBody = init?.body === undefined && input instanceof Request && !['GET', 'HEAD'].includes(method)
-      ? input.clone().text().then(scrubBody).catch(() => '')
-      : Promise.resolve(scrubBody(init?.body));
+    let request = null;
+    let reqBody = Promise.resolve('');
+    try {
+      const method = String(init?.method || input?.method || 'GET').toUpperCase();
+      const raw = typeof input === 'string' ? input : input?.url ?? String(input);
+      request = {
+        method,
+        url: pathOf(raw),
+        fullUrl: fullUrl(raw),
+        reqHeaders: scrubHeaders({ ...headersOf(input?.headers), ...headersOf(init?.headers) }),
+      };
+      // a Request object's body can only be read asynchronously, and before fetch consumes it
+      reqBody = init?.body === undefined && input instanceof Request && !['GET', 'HEAD'].includes(method)
+        ? input.clone().text().then(scrubBody).catch(() => '')
+        : Promise.resolve(scrubBody(init?.body));
+    } catch { /* not recorded; the request itself goes ahead */ }
+    if (!request) return origFetch.apply(this, arguments);
     try {
       const res = await origFetch.apply(this, arguments);
       if (res.status >= 400) {
@@ -134,40 +142,46 @@
     }
   };
 
-  // XMLHttpRequest (axios, which the DIGIT UI uses)
+  // XMLHttpRequest (axios, which the DIGIT UI uses). Recording never gets in the app's way: every recorder step is
+  // guarded, and each version keeps its notes under its own key because an older copy may wrap the same methods.
+  const REQ = `__digitBugReq${VERSION}`;
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__digitBug = { method: String(method).toUpperCase(), url: pathOf(url), fullUrl: fullUrl(url), headers: {} };
+    try {
+      this[REQ] = { method: String(method).toUpperCase(), url: pathOf(url), fullUrl: fullUrl(url), headers: {} };
+    } catch { /* not recorded */ }
     return origOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-    if (this.__digitBug) this.__digitBug.headers[name] = value;
+    try { if (this[REQ]) this[REQ].headers[name] = value; } catch { /* not recorded */ }
     return origSetHeader.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
-    const info = this.__digitBug;
-    if (info) {
-      const reqBody = scrubBody(body);
-      let timedOut = false;
-      this.addEventListener('timeout', () => { timedOut = true; });
-      this.addEventListener('loadend', () => {
-        if (this.status && this.status < 400) return;
-        let text = '';
-        try {
-          if (this.responseType === '' || this.responseType === 'text') text = this.responseText;
-          else if (this.responseType === 'json') text = JSON.stringify(this.response);
-        } catch { /* unreadable body */ }
-        post({
-          kind: 'network', method: info.method, url: info.url, fullUrl: info.fullUrl,
-          reqHeaders: scrubHeaders(info.headers), reqBody, status: this.status,
-          error: this.status ? errorSummary(text)
-            : timedOut ? `timed out after ${this.timeout / 1000} s` : 'request failed (network error, CORS or aborted)',
-          response: this.status ? scrubText(text, MAX_RESPONSE) : '',
+    try {
+      const info = this[REQ];
+      if (info) {
+        const reqBody = scrubBody(body);
+        let timedOut = false;
+        this.addEventListener('timeout', () => { timedOut = true; });
+        this.addEventListener('loadend', () => {
+          if (this.status && this.status < 400) return;
+          let text = '';
+          try {
+            if (this.responseType === '' || this.responseType === 'text') text = this.responseText;
+            else if (this.responseType === 'json') text = JSON.stringify(this.response);
+          } catch { /* unreadable body */ }
+          post({
+            kind: 'network', method: info.method, url: info.url, fullUrl: info.fullUrl,
+            reqHeaders: scrubHeaders(info.headers), reqBody, status: this.status,
+            error: this.status ? errorSummary(text)
+              : timedOut ? `timed out after ${this.timeout / 1000} s` : 'request failed (network error, CORS or aborted)',
+            response: this.status ? scrubText(text, MAX_RESPONSE) : '',
+          });
         });
-      });
-    }
+      }
+    } catch { /* not recorded */ }
     return origSend.apply(this, arguments);
   };
 
