@@ -6,7 +6,7 @@
   :root { --bg: #fff; --fg: #0b0c0c; --muted: #505a5f; --accent: #c84c0e; --rec: #d4351c; --border: #d6d6d6; }
   @media (prefers-color-scheme: dark) { :root { --bg: #1e1e1e; --fg: #f3f3f3; --muted: #b1b4b6; --border: #444; } }
   body { margin: 0; width: 280px; padding: 14px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
-  h1 { font-size: 15px; margin: 0 0 10px; }
+  h1 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0 0 10px; }
   button { width: 100%; padding: 10px; margin-top: 8px; border-radius: 6px; border: 1px solid var(--border);
            background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-  <h1>DIGIT Bug Reporter</h1>
+  <h1><img src="icons/icon-32.png" alt="" width="20" height="20"> DIGIT Bug Reporter</h1>
   <div id="idle" hidden>
     <fieldset>
       <legend>Capture</legend>
